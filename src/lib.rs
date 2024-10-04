@@ -23,11 +23,12 @@ use providers::{
     cloudflare::CloudflareProvider,
     rfc2136::{DnsAddress, Rfc2136Provider},
 };
+use thiserror::Error;
 
 pub mod http;
 pub mod providers;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error {
     Protocol(String),
     Parse(String),

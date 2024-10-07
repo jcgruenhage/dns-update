@@ -25,7 +25,60 @@ use hickory_client::rr::{DNSClass, Name, RData, Record, RecordType};
 use hickory_client::tcp::TcpClientConnection;
 use hickory_client::udp::UdpClientConnection;
 
+use serde::{Deserialize, Serialize};
+use serde_with::base64::Base64;
+use serde_with::serde_as;
+
 use crate::{DnsRecord, Error, IntoFqdn};
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Rfc2136Config {
+    addr: String,
+    #[serde(flatten)]
+    kind: SignerKind,
+}
+
+impl TryFrom<Rfc2136Config> for Rfc2136Provider {
+    type Error = Error;
+
+    fn try_from(config: Rfc2136Config) -> crate::Result<Self> {
+        match config.kind {
+            SignerKind::TSIG(tsig_config) => Self::new_tsig(
+                config.addr,
+                tsig_config.key_name,
+                tsig_config.key,
+                tsig_config.algorithm,
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SignerKind {
+    TSIG(TsigConfig),
+    // TODO: Loading a `KeyPair` is tricky, so this is not implemented yet
+    // SIG0(Sig0Config),
+}
+
+#[serde_as]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct TsigConfig {
+    key_name: String,
+    #[serde_as(as = "Base64")]
+    key: Vec<u8>,
+    algorithm: TsigAlgorithm,
+}
+
+// #[serde_as]
+// #[derive(Deserialize)]
+// pub struct Sig0Config {
+//     signer_name: String,
+//     key: KeyPair<Private>,
+//     #[serde_as(as = "Base64")]
+//     public_key: Vec<u8>,
+//     algorithm: Algorithm,
+// }
 
 #[derive(Clone)]
 pub struct Rfc2136Provider {
@@ -33,7 +86,7 @@ pub struct Rfc2136Provider {
     signer: Arc<Signer>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DnsAddress {
     Tcp(SocketAddr),
     Udp(SocketAddr),

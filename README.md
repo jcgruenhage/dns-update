@@ -47,8 +47,7 @@ Using Cloudflare's API:
 ```rust,ignore
         // Create a new Cloudflare client
         let client =
-            DnsUpdater::new_cloudflare("<API_TOKEN>", None::<String>, Some(Duration::from_secs(60)))
-                .unwrap();
+            DnsUpdater::new_cloudflare("<API_TOKEN>", None::<String>, Some(Duration::from_secs(60)));
 
         // Create a new TXT record
         client.create(

@@ -19,6 +19,19 @@ use serde_json::Value;
 
 use crate::{http::HttpClientBuilder, DnsRecord, Error, IntoFqdn};
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CloudflareConfig {
+    secret: String,
+    email: Option<String>,
+    timeout: Option<Duration>,
+}
+
+impl From<CloudflareConfig> for CloudflareProvider {
+    fn from(config: CloudflareConfig) -> Self {
+        Self::new(config.secret, config.email, config.timeout)
+    }
+}
+
 #[derive(Clone)]
 pub struct CloudflareProvider {
     client: HttpClientBuilder,
@@ -90,7 +103,7 @@ impl CloudflareProvider {
         secret: impl AsRef<str>,
         email: Option<impl AsRef<str>>,
         timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
+    ) -> Self {
         let client = if let Some(email) = email {
             HttpClientBuilder::default()
                 .with_header("X-Auth-Email", email.as_ref())
@@ -101,7 +114,7 @@ impl CloudflareProvider {
         }
         .with_timeout(timeout);
 
-        Ok(Self { client })
+        Self { client }
     }
 
     async fn obtain_zone_id(&self, origin: impl IntoFqdn<'_>) -> crate::Result<String> {

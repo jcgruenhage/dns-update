@@ -20,9 +20,10 @@ use std::{
 
 use hickory_client::proto::dnssec::{rdata::KEY, SigningKey};
 use providers::{
-    cloudflare::CloudflareProvider,
-    rfc2136::{DnsAddress, Rfc2136Provider},
+    cloudflare::{CloudflareConfig, CloudflareProvider},
+    rfc2136::{DnsAddress, Rfc2136Config, Rfc2136Provider},
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod http;
@@ -95,6 +96,28 @@ pub enum Algorithm {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DnsUpdaterConfig {
+    Rfc2136(Rfc2136Config),
+    Cloudflare(CloudflareConfig),
+}
+
+impl TryFrom<DnsUpdaterConfig> for DnsUpdater {
+    type Error = crate::Error;
+
+    fn try_from(config: DnsUpdaterConfig) -> Result<Self> {
+        match config {
+            DnsUpdaterConfig::Rfc2136(rfc2136_config) => {
+                Ok(DnsUpdater::Rfc2136(rfc2136_config.try_into()?))
+            }
+            DnsUpdaterConfig::Cloudflare(cloudflare_config) => {
+                Ok(DnsUpdater::Cloudflare(cloudflare_config.into()))
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum DnsUpdater {
     Rfc2136(Rfc2136Provider),
@@ -142,10 +165,8 @@ impl DnsUpdater {
         secret: impl AsRef<str>,
         email: Option<impl AsRef<str>>,
         timeout: Option<Duration>,
-    ) -> crate::Result<Self> {
-        Ok(DnsUpdater::Cloudflare(CloudflareProvider::new(
-            secret, email, timeout,
-        )?))
+    ) -> Self {
+        DnsUpdater::Cloudflare(CloudflareProvider::new(secret, email, timeout))
     }
 
     /// Create a new DNS record.
@@ -268,5 +289,32 @@ impl Display for Error {
             Error::Unauthorized => write!(f, "Unauthorized"),
             Error::NotFound => write!(f, "Not found"),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::DnsUpdaterConfig;
+
+    #[test]
+    fn provider_config() {
+        let cloudflare_config_string = r###"{
+            "cloudflare": {
+                "secret": "<put_token_here>"
+            }
+        }"###;
+        let _cloudflare_config: DnsUpdaterConfig =
+            serde_json::from_str(&cloudflare_config_string).unwrap();
+
+        let rfc2136_config_string = r###"{
+            "rfc2136": {
+                "addr": "udp://1.2.3.4:53",
+                "key_name": "test",
+                "key": "test",
+                "algorithm": "hmac-sha256"
+            }
+        }"###;
+        let _rfc2136_config: DnsUpdaterConfig =
+            serde_json::from_str(&rfc2136_config_string).unwrap();
     }
 }

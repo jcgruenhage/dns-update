@@ -13,20 +13,75 @@ use std::net::{AddrParseError, SocketAddr};
 use std::sync::Arc;
 
 use hickory_client::client::{Client, ClientHandle};
-use hickory_client::proto::dnssec::rdata::tsig::TsigAlgorithm;
-use hickory_client::proto::dnssec::rdata::KEY;
-use hickory_client::proto::dnssec::tsig::TSigner;
-use hickory_client::proto::dnssec::{Algorithm, DnsSecError, SigSigner, SigningKey};
-use hickory_client::proto::op::{MessageFinalizer, ResponseCode};
-use hickory_client::proto::rr::rdata::{A, AAAA, CNAME, MX, NS, SRV, TXT};
-use hickory_client::proto::rr::{DNSClass, Name, RData, Record};
-use hickory_client::proto::runtime::TokioRuntimeProvider;
-use hickory_client::proto::tcp::TcpClientStream;
-use hickory_client::proto::udp::UdpClientStream;
-use hickory_client::proto::ProtoError;
 use hickory_client::ClientError;
 
+use hickory_proto::dnssec::rdata::tsig::TsigAlgorithm;
+use hickory_proto::dnssec::rdata::KEY;
+use hickory_proto::dnssec::tsig::TSigner;
+use hickory_proto::dnssec::{DnsSecError, SigSigner, SigningKey};
+use hickory_proto::op::MessageFinalizer;
+use hickory_proto::op::ResponseCode;
+use hickory_proto::rr::rdata::{A, AAAA, CNAME, MX, NS, SRV, TXT};
+use hickory_proto::rr::{DNSClass, Name, RData, Record};
+use hickory_proto::runtime::TokioRuntimeProvider;
+use hickory_proto::tcp::TcpClientStream;
+use hickory_proto::udp::UdpClientStream;
+use hickory_proto::ProtoError;
+
+use serde::{Deserialize, Serialize};
+use serde_with::base64::Base64;
+use serde_with::serde_as;
+
 use crate::{DnsRecord, Error, IntoFqdn};
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Rfc2136Config {
+    addr: String,
+    #[serde(flatten)]
+    kind: SignerKind,
+}
+
+impl TryFrom<Rfc2136Config> for Rfc2136Provider {
+    type Error = Error;
+
+    fn try_from(config: Rfc2136Config) -> crate::Result<Self> {
+        match config.kind {
+            SignerKind::TSIG(tsig_config) => Self::new_tsig(
+                config.addr,
+                tsig_config.key_name,
+                tsig_config.key,
+                tsig_config.algorithm,
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SignerKind {
+    TSIG(TsigConfig),
+    // TODO: Loading a `KeyPair` is tricky, so this is not implemented yet
+    // SIG0(Sig0Config),
+}
+
+#[serde_as]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct TsigConfig {
+    key_name: String,
+    #[serde_as(as = "Base64")]
+    key: Vec<u8>,
+    algorithm: TsigAlgorithm,
+}
+
+// #[serde_as]
+// #[derive(Deserialize)]
+// pub struct Sig0Config {
+//     signer_name: String,
+//     key: KeyPair<Private>,
+//     #[serde_as(as = "Base64")]
+//     public_key: Vec<u8>,
+//     algorithm: Algorithm,
+// }
 
 #[derive(Clone)]
 pub struct Rfc2136Provider {
@@ -34,7 +89,7 @@ pub struct Rfc2136Provider {
     signer: Arc<dyn MessageFinalizer>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DnsAddress {
     Tcp(SocketAddr),
     Udp(SocketAddr),

@@ -20,6 +20,8 @@ serde_json = "1.0.116"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "http2"]}
 serde_urlencoded = "0.7.1"
 thiserror = "1.0.64"
+serde_with = { version = "3.10.0", features = ["base64"] }
+hickory-proto = { git = "https://github.com/hickory-dns/hickory-dns.git", rev = "c141df9468b4039976ff1fcb298b6e9c84798520", version = "0.25.0", features = ["serde"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

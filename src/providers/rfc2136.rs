@@ -14,16 +14,18 @@ use std::sync::Arc;
 
 use hickory_client::client::{AsyncClient, ClientConnection, ClientHandle, Signer};
 use hickory_client::error::ClientError;
-use hickory_client::op::ResponseCode;
 use hickory_client::proto::error::ProtoError;
 use hickory_client::proto::rr::dnssec::tsig::TSigner;
 use hickory_client::proto::rr::dnssec::{Algorithm, KeyPair, Private, SigSigner};
-use hickory_client::rr::rdata::key::KEY;
-use hickory_client::rr::rdata::tsig::TsigAlgorithm;
-use hickory_client::rr::rdata::{A, AAAA, CNAME, MX, NS, SRV, TXT};
-use hickory_client::rr::{DNSClass, Name, RData, Record, RecordType};
 use hickory_client::tcp::TcpClientConnection;
 use hickory_client::udp::UdpClientConnection;
+
+use hickory_proto::op::ResponseCode;
+use hickory_proto::rr::dnssec::rdata::tsig::TsigAlgorithm;
+use hickory_proto::rr::dnssec::rdata::KEY;
+use hickory_proto::rr::rdata::{A, AAAA, CNAME, MX, NS, SRV, TXT};
+use hickory_proto::rr::{DNSClass, Name, RData, Record};
+use hickory_proto::runtime::TokioRuntimeProvider;
 
 use serde::{Deserialize, Serialize};
 use serde_with::base64::Base64;
@@ -147,7 +149,8 @@ impl Rfc2136Provider {
                 Ok(client)
             }
             DnsAddress::Tcp(addr) => {
-                let conn = TcpClientConnection::new(*addr)?.new_stream(Some(self.signer.clone()));
+                let conn = TcpClientConnection::new(*addr, TokioRuntimeProvider::new())?
+                    .new_stream(Some(self.signer.clone()));
                 let (client, bg) = AsyncClient::connect(conn).await?;
                 tokio::spawn(bg);
                 Ok(client)
@@ -162,13 +165,12 @@ impl Rfc2136Provider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let (rr_type, rdata) = convert_record(record)?;
-        let mut record = Record::with(
+        let rdata = convert_record(record)?;
+        let record = Record::from_rdata(
             Name::from_str_relaxed(name.into_name().as_ref())?,
-            rr_type,
             ttl,
+            rdata,
         );
-        record.set_data(Some(rdata));
 
         let mut client = self.connect().await?;
         let result = client
@@ -188,13 +190,12 @@ impl Rfc2136Provider {
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let (rr_type, rdata) = convert_record(record)?;
-        let mut record = Record::with(
+        let rdata = convert_record(record)?;
+        let record = Record::from_rdata(
             Name::from_str_relaxed(name.into_name().as_ref())?,
-            rr_type,
             ttl,
+            rdata,
         );
-        record.set_data(Some(rdata));
 
         let mut client = self.connect().await?;
         let result = client
@@ -232,37 +233,27 @@ impl Rfc2136Provider {
     }
 }
 
-fn convert_record(record: DnsRecord) -> crate::Result<(RecordType, RData)> {
+fn convert_record(record: DnsRecord) -> crate::Result<RData> {
     Ok(match record {
-        DnsRecord::A { content } => (RecordType::A, RData::A(A::from(content))),
-        DnsRecord::AAAA { content } => (RecordType::AAAA, RData::AAAA(AAAA::from(content))),
-        DnsRecord::CNAME { content } => (
-            RecordType::CNAME,
-            RData::CNAME(CNAME(Name::from_str_relaxed(content)?)),
-        ),
-        DnsRecord::NS { content } => (
-            RecordType::NS,
-            RData::NS(NS(Name::from_str_relaxed(content)?)),
-        ),
-        DnsRecord::MX { content, priority } => (
-            RecordType::MX,
-            RData::MX(MX::new(priority, Name::from_str_relaxed(content)?)),
-        ),
-        DnsRecord::TXT { content } => (RecordType::TXT, RData::TXT(TXT::new(vec![content]))),
+        DnsRecord::A { content } => RData::A(A::from(content)),
+        DnsRecord::AAAA { content } => RData::AAAA(AAAA::from(content)),
+        DnsRecord::CNAME { content } => RData::CNAME(CNAME(Name::from_str_relaxed(content)?)),
+        DnsRecord::NS { content } => RData::NS(NS(Name::from_str_relaxed(content)?)),
+        DnsRecord::MX { content, priority } => {
+            RData::MX(MX::new(priority, Name::from_str_relaxed(content)?))
+        }
+        DnsRecord::TXT { content } => RData::TXT(TXT::new(vec![content])),
         DnsRecord::SRV {
             content,
             priority,
             weight,
             port,
-        } => (
-            RecordType::SRV,
-            RData::SRV(SRV::new(
-                priority,
-                weight,
-                port,
-                Name::from_str_relaxed(content)?,
-            )),
-        ),
+        } => RData::SRV(SRV::new(
+            priority,
+            weight,
+            port,
+            Name::from_str_relaxed(content)?,
+        )),
     })
 }
 

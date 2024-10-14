@@ -311,7 +311,7 @@ mod test {
                 "addr": "udp://1.2.3.4:53",
                 "key_name": "test",
                 "key": "test",
-                "algorithm": "HmacSha256"
+                "algorithm": "hmac-sha256"
             }
         }"###;
         let _rfc2136_config: DnsUpdaterConfig =

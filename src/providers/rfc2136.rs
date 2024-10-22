@@ -21,7 +21,6 @@ use hickory_proto::dnssec::tsig::TSigner;
 use hickory_proto::dnssec::{DnsSecError, SigSigner, SigningKey};
 use hickory_proto::op::MessageFinalizer;
 use hickory_proto::op::ResponseCode;
-use hickory_proto::rr::rdata::{A, AAAA, CNAME, MX, NS, SRV, TXT};
 use hickory_proto::rr::{DNSClass, Name, RData, Record};
 use hickory_proto::runtime::TokioRuntimeProvider;
 use hickory_proto::tcp::TcpClientStream;
@@ -32,7 +31,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::base64::Base64;
 use serde_with::serde_as;
 
-use crate::{DnsRecord, Error, IntoFqdn};
+use crate::{Error, IntoFqdn};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Rfc2136Config {
@@ -158,11 +157,10 @@ impl Rfc2136Provider {
     pub(crate) async fn create(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        rdata: RData,
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let rdata = convert_record(record)?;
         let record = Record::from_rdata(
             Name::from_str_relaxed(name.into_name().as_ref())?,
             ttl,
@@ -183,11 +181,10 @@ impl Rfc2136Provider {
     pub(crate) async fn update(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        rdata: RData,
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
-        let rdata = convert_record(record)?;
         let record = Record::from_rdata(
             Name::from_str_relaxed(name.into_name().as_ref())?,
             ttl,
@@ -228,30 +225,6 @@ impl Rfc2136Provider {
             Err(crate::Error::Response(result.response_code().to_string()))
         }
     }
-}
-
-fn convert_record(record: DnsRecord) -> crate::Result<RData> {
-    Ok(match record {
-        DnsRecord::A { content } => RData::A(A::from(content)),
-        DnsRecord::AAAA { content } => RData::AAAA(AAAA::from(content)),
-        DnsRecord::CNAME { content } => RData::CNAME(CNAME(Name::from_str_relaxed(content)?)),
-        DnsRecord::NS { content } => RData::NS(NS(Name::from_str_relaxed(content)?)),
-        DnsRecord::MX { content, priority } => {
-            RData::MX(MX::new(priority, Name::from_str_relaxed(content)?))
-        }
-        DnsRecord::TXT { content } => RData::TXT(TXT::new(vec![content])),
-        DnsRecord::SRV {
-            content,
-            priority,
-            weight,
-            port,
-        } => RData::SRV(SRV::new(
-            priority,
-            weight,
-            port,
-            Name::from_str_relaxed(content)?,
-        )),
-    })
 }
 
 impl TryFrom<&str> for DnsAddress {
@@ -304,35 +277,6 @@ impl TryFrom<String> for DnsAddress {
 
     fn try_from(url: String) -> Result<Self, Self::Error> {
         DnsAddress::try_from(url.as_str())
-    }
-}
-
-impl From<crate::TsigAlgorithm> for TsigAlgorithm {
-    fn from(alg: crate::TsigAlgorithm) -> Self {
-        match alg {
-            crate::TsigAlgorithm::HmacMd5 => TsigAlgorithm::HmacMd5,
-            crate::TsigAlgorithm::Gss => TsigAlgorithm::Gss,
-            crate::TsigAlgorithm::HmacSha1 => TsigAlgorithm::HmacSha1,
-            crate::TsigAlgorithm::HmacSha224 => TsigAlgorithm::HmacSha224,
-            crate::TsigAlgorithm::HmacSha256 => TsigAlgorithm::HmacSha256,
-            crate::TsigAlgorithm::HmacSha256_128 => TsigAlgorithm::HmacSha256_128,
-            crate::TsigAlgorithm::HmacSha384 => TsigAlgorithm::HmacSha384,
-            crate::TsigAlgorithm::HmacSha384_192 => TsigAlgorithm::HmacSha384_192,
-            crate::TsigAlgorithm::HmacSha512 => TsigAlgorithm::HmacSha512,
-            crate::TsigAlgorithm::HmacSha512_256 => TsigAlgorithm::HmacSha512_256,
-        }
-    }
-}
-
-impl From<crate::Algorithm> for Algorithm {
-    fn from(alg: crate::Algorithm) -> Self {
-        match alg {
-            crate::Algorithm::RSASHA256 => Algorithm::RSASHA256,
-            crate::Algorithm::RSASHA512 => Algorithm::RSASHA512,
-            crate::Algorithm::ECDSAP256SHA256 => Algorithm::ECDSAP256SHA256,
-            crate::Algorithm::ECDSAP384SHA384 => Algorithm::ECDSAP384SHA384,
-            crate::Algorithm::ED25519 => Algorithm::ED25519,
-        }
     }
 }
 

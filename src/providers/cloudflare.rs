@@ -14,10 +14,11 @@ use std::{
     time::Duration,
 };
 
+use hickory_proto::rr::RData;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{http::HttpClientBuilder, DnsRecord, Error, IntoFqdn};
+use crate::{http::HttpClientBuilder, Error, IntoFqdn};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CloudflareConfig {
@@ -162,7 +163,7 @@ impl CloudflareProvider {
     pub(crate) async fn create(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        rdata: RData,
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
@@ -173,10 +174,14 @@ impl CloudflareProvider {
             ))
             .with_body(CreateDnsRecordParams {
                 ttl: ttl.into(),
-                priority: record.priority(),
+                priority: match &rdata {
+                    RData::MX(mx) => Some(mx.preference()),
+                    RData::SRV(srv) => Some(srv.priority()),
+                    _ => None,
+                },
                 proxied: false.into(),
                 name: name.into_name().as_ref(),
-                content: record.into(),
+                content: rdata.try_into()?,
             })?
             .send::<ApiResult<Value>>()
             .await
@@ -187,7 +192,7 @@ impl CloudflareProvider {
     pub(crate) async fn update(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        rdata: RData,
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
@@ -202,7 +207,7 @@ impl CloudflareProvider {
                 ttl: ttl.into(),
                 proxied: None,
                 name: name.as_ref(),
-                content: record.into(),
+                content: rdata.try_into()?,
             })?
             .send::<ApiResult<Value>>()
             .await
@@ -252,16 +257,40 @@ impl Query {
     }
 }
 
-impl From<DnsRecord> for DnsContent {
-    fn from(record: DnsRecord) -> Self {
-        match record {
-            DnsRecord::A { content } => DnsContent::A { content },
-            DnsRecord::AAAA { content } => DnsContent::AAAA { content },
-            DnsRecord::CNAME { content } => DnsContent::CNAME { content },
-            DnsRecord::NS { content } => DnsContent::NS { content },
-            DnsRecord::MX { content, priority } => DnsContent::MX { content, priority },
-            DnsRecord::TXT { content } => DnsContent::TXT { content },
-            DnsRecord::SRV { content, .. } => DnsContent::SRV { content },
-        }
+impl TryFrom<RData> for DnsContent {
+    type Error = crate::Error;
+
+    fn try_from(rdata: RData) -> crate::Result<Self> {
+        Ok(match rdata {
+            RData::A(a) => DnsContent::A { content: a.0 },
+            RData::AAAA(aaaa) => DnsContent::AAAA { content: aaaa.0 },
+            RData::CNAME(cname) => DnsContent::CNAME {
+                content: cname.0.to_utf8(),
+            },
+            RData::MX(mx) => DnsContent::MX {
+                content: mx.exchange().to_utf8(),
+                priority: mx.preference(),
+            },
+            RData::NS(ns) => DnsContent::NS {
+                content: ns.0.to_utf8(),
+            },
+            RData::SRV(srv) => DnsContent::SRV {
+                content: format!(
+                    "{} {} {} {}",
+                    srv.priority(),
+                    srv.weight(),
+                    srv.port(),
+                    srv.target()
+                ),
+            },
+            RData::TXT(txt) => DnsContent::TXT {
+                content: format!("{txt}"),
+            },
+            rdata => {
+                return Err(crate::Error::Serialize(format!(
+                    "Failed to turn record {rdata} into cloudflare DnsContent",
+                )))
+            }
+        })
     }
 }

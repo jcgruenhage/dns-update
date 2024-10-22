@@ -13,12 +13,11 @@ use core::fmt;
 use std::{
     borrow::Cow,
     fmt::{Display, Formatter},
-    net::{Ipv4Addr, Ipv6Addr},
-    str::FromStr,
     time::Duration,
 };
 
 use hickory_client::proto::rr::dnssec::{KeyPair, Private};
+use hickory_proto::rr::RData;
 use providers::{
     cloudflare::{CloudflareConfig, CloudflareProvider},
     rfc2136::{DnsAddress, Rfc2136Config, Rfc2136Provider},
@@ -28,6 +27,8 @@ use thiserror::Error;
 
 pub mod http;
 pub mod providers;
+
+pub use hickory_proto::rr::dnssec::{rdata::tsig::TsigAlgorithm, Algorithm};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -39,58 +40,6 @@ pub enum Error {
     Serialize(String),
     Unauthorized,
     NotFound,
-}
-
-/// A DNS record type.
-pub enum DnsRecord {
-    A {
-        content: Ipv4Addr,
-    },
-    AAAA {
-        content: Ipv6Addr,
-    },
-    CNAME {
-        content: String,
-    },
-    NS {
-        content: String,
-    },
-    MX {
-        content: String,
-        priority: u16,
-    },
-    TXT {
-        content: String,
-    },
-    SRV {
-        content: String,
-        priority: u16,
-        weight: u16,
-        port: u16,
-    },
-}
-
-/// A TSIG algorithm.
-pub enum TsigAlgorithm {
-    HmacMd5,
-    Gss,
-    HmacSha1,
-    HmacSha224,
-    HmacSha256,
-    HmacSha256_128,
-    HmacSha384,
-    HmacSha384_192,
-    HmacSha512,
-    HmacSha512_256,
-}
-
-/// A DNSSEC algorithm.
-pub enum Algorithm {
-    RSASHA256,
-    RSASHA512,
-    ECDSAP256SHA256,
-    ECDSAP384SHA384,
-    ED25519,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -174,7 +123,7 @@ impl DnsUpdater {
     pub async fn create(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record: RData,
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
@@ -188,7 +137,7 @@ impl DnsUpdater {
     pub async fn update(
         &self,
         name: impl IntoFqdn<'_>,
-        record: DnsRecord,
+        record: RData,
         ttl: u32,
         origin: impl IntoFqdn<'_>,
     ) -> crate::Result<()> {
@@ -253,26 +202,6 @@ impl<'x> IntoFqdn<'x> for String {
             Cow::Owned(name.to_string())
         } else {
             Cow::Owned(self)
-        }
-    }
-}
-
-impl FromStr for TsigAlgorithm {
-    type Err = ();
-
-    fn from_str(s: &str) -> std::prelude::v1::Result<Self, Self::Err> {
-        match s {
-            "hmac-md5" => Ok(TsigAlgorithm::HmacMd5),
-            "gss" => Ok(TsigAlgorithm::Gss),
-            "hmac-sha1" => Ok(TsigAlgorithm::HmacSha1),
-            "hmac-sha224" => Ok(TsigAlgorithm::HmacSha224),
-            "hmac-sha256" => Ok(TsigAlgorithm::HmacSha256),
-            "hmac-sha256-128" => Ok(TsigAlgorithm::HmacSha256_128),
-            "hmac-sha384" => Ok(TsigAlgorithm::HmacSha384),
-            "hmac-sha384-192" => Ok(TsigAlgorithm::HmacSha384_192),
-            "hmac-sha512" => Ok(TsigAlgorithm::HmacSha512),
-            "hmac-sha512-256" => Ok(TsigAlgorithm::HmacSha512_256),
-            _ => Err(()),
         }
     }
 }

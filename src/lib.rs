@@ -18,7 +18,7 @@ use std::{
     time::Duration,
 };
 
-use hickory_client::proto::rr::dnssec::{KeyPair, Private};
+use hickory_client::proto::dnssec::{rdata::KEY, SigningKey};
 use providers::{
     cloudflare::CloudflareProvider,
     rfc2136::{DnsAddress, Rfc2136Provider},
@@ -37,6 +37,7 @@ pub enum Error {
     Serialize(String),
     Unauthorized,
     NotFound,
+    DnsSec(String),
 }
 
 /// A DNS record type.
@@ -124,16 +125,14 @@ impl DnsUpdater {
     pub fn new_rfc2136_sig0(
         addr: impl TryInto<DnsAddress>,
         signer_name: impl AsRef<str>,
-        key: KeyPair<Private>,
-        public_key: impl Into<Vec<u8>>,
-        algorithm: Algorithm,
+        key: Box<dyn SigningKey>,
+        public_key: KEY,
     ) -> crate::Result<Self> {
         Ok(DnsUpdater::Rfc2136(Rfc2136Provider::new_sig0(
             addr,
             signer_name,
             key,
             public_key,
-            algorithm.into(),
         )?))
     }
 
@@ -261,6 +260,7 @@ impl Display for Error {
             Error::Protocol(e) => write!(f, "Protocol error: {}", e),
             Error::Parse(e) => write!(f, "Parse error: {}", e),
             Error::Client(e) => write!(f, "Client error: {}", e),
+            Error::DnsSec(e) => write!(f, "DNSSEC error: {}", e),
             Error::Response(e) => write!(f, "Response error: {}", e),
             Error::Api(e) => write!(f, "API error: {}", e),
             Error::Serialize(e) => write!(f, "Serialize error: {}", e),
